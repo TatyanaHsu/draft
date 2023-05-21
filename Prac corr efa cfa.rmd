@@ -1,0 +1,274 @@
+---
+title: "Prac corr efa cfa"
+output: html_document
+date: "2023-05-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+```{r}
+library(Rcmdr)
+library(foreign)
+library(tcltk)
+str <- (Dataset <- read.spss(
+  tk_choose.files(caption = "选择Hau&etal(2021)练习文件：chap1_2_CFA_corr.sav",default = "chap1_2_CFA_corr.sav"),
+  to.data.frame=T))
+##文件需保存在工作目录 getwd()可获得工作目录; 或者以choose.files()选文件可获得完整路径名
+
+cor9 = as.matrix(Dataset[3:11,3:11])
+rownames(cor9)=colnames(cor9)
+cor9##检视相关系数矩阵
+##如果导入的是*.PCA_EFA.rawdata.sav，须改为执行下一句
+# (cor9 <- cor(Dataset))
+
+stem(cor9) #明显分为低相关0.03~0.17 与 中相关 0.43~0.54
+
+library(ellipse);
+plotcorr(cor9,col=grey(1-abs(cor9)));
+
+.index <- c(1,4,5,2,6,7,3,8,9); ##按分组排序
+(cor9 <- cor9[.index,.index]);
+plotcorr(cor9,col=grey(1-abs(cor9)));
+
+N=1e5;
+library(MASS)
+Dataset = mvrnorm(N,rep(0,9),cor9,empirical=T)# rep(0,9)是均值向量
+Dataset = as.data.frame(Dataset);
+summary(Dataset)
+var(Dataset)##与原相关系数矩阵核对
+all.equal(cor9,var(Dataset))
+
+
+#主成分分析
+local({
+  .PC <- princomp(~v1+v2+v3+v4+v5+v6+v7+v8+v9, cor=TRUE, data=Dataset)
+  cat("\nComponent loadings:\n")
+  print(unclass(loadings(.PC)))
+  cat("\nComponent variances:\n")
+  print(.PC$sd^2)
+  cat("\n")
+  print(summary(.PC))
+  screeplot(.PC)
+  abline(h=1,lty=2)
+  biplot(.PC ,1:2,0)
+  biplot(.PC ,c(1,3),0)
+  biplot(.PC ,2:3,0)
+})
+
+#(v1,v2,v3)子数据PCA结果与散点图
+subdata1 <- as.data.frame(mvrnorm(N, rep(0, 3), cor9[c(1, 4, 7), c(1, 4, 7)], empirical = TRUE))
+local({
+  .PC <- princomp(~v1+v2+v3, cor=TRUE, data=subdata1)
+  cat("\nComponent loadings:\n")
+  print(unclass(loadings(.PC)))
+  cat("\nComponent variances:\n")
+  print(.PC$sd^2)
+  cat("\n")
+  print(summary(.PC))
+  screeplot(.PC)
+  abline(h=1,lty=2)
+})
+library(rgl)
+plot3d(Dataset$v1, Dataset$v2, Dataset$v3,size = 1,aspect =F ,asp=1)
+
+subdata2 <- as.data.frame(mvrnorm(N, rep(0, 3), cor9[c(1, 4, 3), c(1, 4, 3)], empirical = TRUE))
+local({
+  .PC <- princomp(~v1+v2+v5, cor=TRUE, data=subdata2)
+  cat("\nComponent loadings:\n")
+  print(unclass(loadings(.PC)))
+  cat("\nComponent variances:\n")
+  print(.PC$sd^2)
+  cat("\n")
+  print(summary(.PC))
+  screeplot(.PC)
+  abline(h=1,lty=2)
+})
+plot3d(Dataset$v1, Dataset$v2, Dataset$v5,size = 1,aspect =F ,asp=1)
+
+subdata3 <- as.data.frame(mvrnorm(N, rep(0, 3), cor9[1:3, 1:3], empirical = TRUE))
+local({
+  .PC <- princomp(~v1+v4+v5, cor=TRUE, data=subdata3)
+  cat("\nComponent loadings:\n")
+  print(unclass(loadings(.PC)))
+  cat("\nComponent variances:\n")
+  print(.PC$sd^2)
+  cat("\n")
+  print(summary(.PC))
+  screeplot(.PC)
+  abline(h=1,lty=2)
+})
+plot3d(Dataset$v1, Dataset$v4, Dataset$v5,size = 1,aspect =F ,asp=1)
+
+local({
+  .FA <- factanal(~v1+v2+v3+v4+v5+v6+v7+v8+v9, factors=3, rotation="promax", scores="none", 
+  data=Dataset)
+  print(.FA)
+})
+
+library(sem, pos=22)
+local({
+  .model <- c('G1: v1, v4, v5', 'G2: v2, v6, v7', 'G3: v3, v8, v9')
+  .model <- cfa(file=textConnection(.model), reference.indicators=FALSE)
+  .Data <- Dataset[, c('v1', 'v4', 'v5', 'v2', 'v6', 'v7', 'v3', 'v8', 'v9')] 
+  .Data <- as.data.frame(scale(.Data))
+  summary(sem(.model, data=.Data), robust=FALSE, fit.indices=c("RMSEA","CFI","SRMR"))
+  ## R中的sem包提供了cfa函数简化验证性因子分析的代码。以下语句是极简形式。
+# library(sem);
+# .txt=c('G1:v1,v4,v5','G2:v2,v6,v7','G3:v3,v8,v9');
+# (.model=cfa(textConnection(.txt),reference.indicators = F));
+
+# 交互界面可编辑参数设置
+edit(.model) 
+
+
+###可浏览模型参数的定义
+
+###第一列表示参数是什么变量之间的负荷（单向箭头）、协方差（双向箭头）；
+
+###第二列参数名，如果为空表示固定参数，此时第三列是固定的参数值。
+
+###如果用 .model = edit(.model)，可以在表格界面编辑模型参数设定修改增删参数，保存在.model对象中。
+
+# 结构方程各要素
+
+chap1_2 <- sem(.model,data=Dataset, standardized=T);
+names(chap1_2); ##列出有关结果的索引
+
+summary(chap1_2); ##拟合指标与参数估计
+chap1_2$C; ##再生矩阵
+
+# 交互界面可在Viewer中看到图示结果
+pathDiagram(chap1_2,ignore.double=F)
+## Loading required namespace: DiagrammeR
+##生成模型设计的Graphviz图形描述。
+##可在在线（比如 http://hughesbennett.net/Graphviz ）生成模型图。
+# 交互界面可在Viewer中看到图示结果
+pathDiagram(chap1_2,ignore.double=F,edge.labels='v')
+##生成拟合结果的Graphviz图形描述。
+# 修正指数与修正期望
+summary(modIndices(chap1_2),print.matrices='both')
+})
+
+library(sem)
+(.model <- cfa(text = c(
+  'η1: y1,y2,y3,y4', 
+  'η2: y5, y6, y7, y8',
+  'η3: y9, y10, y11, y12',
+  'η4: y13, y14, y15, y16'
+  )))
+
+class(.model)
+.model <- .model[is.na(.model[,2]) |  substr(.model[,2],1,3)!="C[η",]
+class(.model) <- "semmod"
+
+(.model <-   combineModels(.model,specifyModel(text = c(
+  'η1 -> η2, β2_1, NA',
+  'η2 -> η3, β3_2, NA',
+  'η3 -> η4, β4_3, NA'))))
+class(.model) <- "semmod"
+.model <- removeRedundantPaths(.model)
+
+library(MASS)
+n <- 500
+Dataset <- data.frame(η1 = rnorm(n))
+Dataset$η2 <- .6 * Dataset$η1 + .8 * rnorm(n)
+Dataset$η3 <- .6 * Dataset$η2 + .8 * rnorm(n)
+Dataset$η4 <- .6 * Dataset$η3 + .8 * rnorm(n)
+Lambda.y <- matrix(data = 0,nrow = 16,ncol = 4)
+Lambda.y[floor((row(Lambda.y)-1)/4)==col(Lambda.y)-1] <- .8
+ds.y <- as.matrix(Dataset) %*% t(Lambda.y)+mvrnorm(n,mu = rep(0,16),Sigma = diag(rep(0.6^2),16))
+colnames(ds.y) <- paste("y",1:16,sep = "")
+ds.y <- as.data.frame(ds.y)
+ds.y$y16 <- ds.y$y16+.1*Dataset$η1 ## to ruin the model
+.sem <- sem(model = .model,data = ds.y,obs.variables = paste("y",1:16,sep = ""))
+summary(.sem)
+pathDiagram(.sem,ignore.double=F,edge.labels='v')
+
+```
+
+```{r}
+library(Rcmdr)
+library(foreign)
+library(tcltk)
+str <- (Dataset <- read.spss(
+  tk_choose.files(caption = "选择Hau&etal(2021)练习文件：chap1_2_CFA_corr.sav",default = "chap1_2_CFA_corr.sav"),
+  to.data.frame=T))
+##文件需保存在工作目录 getwd()可获得工作目录; 或者以choose.files()选文件可获得完整路径名
+
+cor9 = as.matrix(Dataset[3:11,3:11])
+rownames(cor9)=colnames(cor9)
+cor9##检视相关系数矩阵
+##如果导入的是*.PCA_EFA.rawdata.sav，须改为执行下一句
+# (cor9 <- cor(Dataset))
+
+stem(cor9) #明显分为低相关0.03~0.17 与 中相关 0.43~0.54
+
+library(ellipse);
+plotcorr(cor9,col=grey(1-abs(cor9)));
+
+.index <- c(1,4,5,2,6,7,3,8,9); ##按分组排序
+(cor9 <- cor9[.index,.index]);
+plotcorr(cor9,col=grey(1-abs(cor9)));
+
+N=1e5;
+library(MASS)
+Dataset = mvrnorm(N,rep(0,9),cor9,empirical=T)# rep(0,9)是均值向量
+Dataset = as.data.frame(Dataset);
+summary(Dataset)
+var(Dataset)##与原相关系数矩阵核对
+all.equal(cor9,var(Dataset))
+
+#(v1,v2,v3)子数据PCA结果与散点图
+
+cor9[cor9<0.35] <- 0.1; cor9[ cor9>0.35 & cor9<1] <- 0.95; 
+##将中高相关更改为极高相关；将低相关取为同一个值，保证矩阵「正定」
+
+subdata1 <- as.data.frame(mvrnorm(N, rep(0, 3), cor9[c(1, 4, 7), c(1, 4, 7)], empirical = TRUE))
+local({
+  .PC <- princomp(~v1+v2+v3, cor=TRUE, data=subdata1)
+  cat("\nComponent loadings:\n")
+  print(unclass(loadings(.PC)))
+  cat("\nComponent variances:\n")
+  print(.PC$sd^2)
+  cat("\n")
+  print(summary(.PC))
+  screeplot(.PC)
+  abline(h=1,lty=2)
+})
+library(scatterplot3d)
+scatterplot3d(Dataset$v1, Dataset$v2, Dataset$v3,  xlab = "v1", ylab = "v2", zlab = "v3")
+
+subdata2 <- as.data.frame(mvrnorm(N, rep(0, 3), cor9[c(1, 4, 3), c(1, 4, 3)], empirical = TRUE))
+local({
+  .PC <- princomp(~v1+v2+v5, cor=TRUE, data=subdata2)
+  cat("\nComponent loadings:\n")
+  print(unclass(loadings(.PC)))
+  cat("\nComponent variances:\n")
+  print(.PC$sd^2)
+  cat("\n")
+  print(summary(.PC))
+  screeplot(.PC)
+  abline(h=1,lty=2)
+})
+scatterplot3d(Dataset$v1, Dataset$v2, Dataset$v5,  xlab = "v1", ylab = "v2", zlab = "v5")
+
+subdata3 <- as.data.frame(mvrnorm(N, rep(0, 3), cor9[1:3, 1:3], empirical = TRUE))
+local({
+  .PC <- princomp(~v1+v4+v5, cor=TRUE, data=subdata3)
+  cat("\nComponent loadings:\n")
+  print(unclass(loadings(.PC)))
+  cat("\nComponent variances:\n")
+  print(.PC$sd^2)
+  cat("\n")
+  print(summary(.PC))
+  screeplot(.PC)
+  abline(h=1,lty=2)
+})
+scatterplot3d(Dataset$v1, Dataset$v4, Dataset$v5,  xlab = "v1", ylab = "v4", zlab = "v5")
+```
+
